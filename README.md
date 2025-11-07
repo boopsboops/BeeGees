@@ -282,7 +282,7 @@ output_dir/
 
 # Contributing #
 - Please feel free to submit issues, fork the repository, and create pull requests for any improvements.
-- This snakemake pipeline was produced by Dan Parsons @ NHMUK for the BioDiversity Genomics Europe (BGE) consortium.
+- This snakemake pipeline was produced by Dan Parsons @ NHMUK for the Biodiversity Genomics Europe (BGE) consortium.
 - Since BeeGees uses [MitogeneExtractor](https://besjournals.onlinelibrary.wiley.com/doi/10.1111/2041-210X.14075) at its core, please cite:
   Brasseur, M.V., Astrin, J.J., Geiger, M.F., Mayer, C., 2023. MitoGeneExtractor: Efficient extraction of mitochondrial genes from next-generation sequencing libraries. Methods in Ecology and Evolution.
 
@@ -295,5 +295,4 @@ output_dir/
 - Output a multi-fasta file of sequences which passed structural validation but failed taxonomy for each Process-ID.
 - Output some simple plots.
 - Clean up and refactor final CSV output, and remove unnecessary columns.
-- 
   
