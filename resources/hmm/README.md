@@ -5,7 +5,7 @@
 - Comprised of 38,243 COI-5P sequences
 - 658bp in length
 ### Construction process:
-1. **DETERMINE SOURCE OF HMM**
+As outlined in [FinPROTAX](https://github.com/psomervuo/FinPROTAX/tree/main). Please see the README.md within FinPROTAX.zip for more information on the cosntruction process.
 
 ## rbcL barcoding region
 - Created Wed Nov 12 13:11:28 2025
