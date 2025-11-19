@@ -2,239 +2,82 @@
 """
 tv_blast2taxonomy.py
 
-This script validates taxonomic assignments by comparing BLAST hits against expected taxonomy 
-using hierarchical taxonomic matching with the BOLD (Barcode of Life Data System) taxonomy database. 
-It processes DNA barcode sequences, their BLAST results, and provides comprehensive taxonomic 
-validation with detailed reporting.
+Validates taxonomic assignments by comparing BLAST hits against expected taxonomy using hierarchical 
+taxonomic matching. Supports both BOLDistilled (COI) and generic semicolon-delimited taxonomy formats (e.g., for rbcL). 
+Designed for metabarcoding studies requiring taxonomic validation of DNA barcode sequences.
 
-The script is designed for metabarcoding studies where sequences need to be taxonomically 
-validated against known reference databases, particularly useful for biodiversity assessments 
-and environmental DNA studies.
+PROCESS OVERVIEW
+================
+1. Parses BLAST results (CSV), expected taxonomy mappings, BLAST database taxonomy (TSV), and input sequences
+2. For each sequence: applies quality filters (see below) -> finds first matching hit -> performs taxonomic validation
+3. Uses hierarchical matching strategy (order/family/genus/species only, exact string matching)
+4. Selects first hit with matching taxonomy after quality filtering
+5. Outputs validation results and filtered sequences
+6. Selects best sequence per Process_ID based on match quality metrics
 
-PROCESS
-=============
-1. INPUT PARSING AND VALIDATION:
-   - Parses multi-FASTA sequences for downstream filtering and output
-   - Parses BLAST results from standardised CSV format with hit columns (hit1, hit2, etc.)
-   - Loads expected taxonomy via Process ID mapping
-   - Imports BOLD taxonomy database from TSV format for reference lookups
-   
-2. SEQUENCE-BY-SEQUENCE PROCESSING:
-   For each query sequence:
-   a) Maps seq_id to Process ID from expected taxonomy
-   b) Extracts expected taxonomic lineage (order → family → genus → species)
-   c) Processes all available BLAST hits and extracts BOLD taxonomies
-   d) Applies configurable minimum percent identity filtering
-   e) Performs hierarchical taxonomic matching against expected lineage
-   f) Selects optimal hit using rank-prioritized quality assessment
-   g) Generates comprehensive taxonomic observation summaries
-   
-3. HIERARCHICAL TAXONOMIC MATCHING STRATEGY:
-   The validation employs sophisticated multi-level matching:
-   - Taxonomic Scope: Restricted to order, family, genus, and species ranks only
-     (class and phylum matches are excluded to prevent overly broad assignments)
-   - Matching Algorithm: Uses exact string comparison at each taxonomic level
-     - Each BLAST hit taxonomy is compared against all levels of expected lineage
-   - Rank Prioritisation: More specific matches take precedence
-     - Species matches > genus matches > family matches > order matches
-     - Records the actual taxonomic rank where matches occur
-   - Match Validation: Only accepts matches where observed taxonomy exactly equals
-     expected taxonomy at any rank within the allowed hierarchy
-     
-4. BOLD DATABASE INTEGRATION:
-   - Extracts BOLD Barcode Index Numbers (BINs) from BLAST sseqids
-   - Retrieves complete taxonomic lineages from BOLD TSV database
-   
-5. QUALITY-BASED HIT SELECTION:
-   Multi-criteria optimisation for selecting best taxonomic assignments:
-   Primary Criterion: Taxonomic Specificity
-   - Species-level matches preferred over genus, family, or order
-   - Ensures most precise taxonomic assignment possible
-   Secondary Criteria (for hits at same taxonomic rank):
-   - Highest percent identity (sequence similarity)
-   - Longest alignment length (coverage)
-   - Fewest mismatches (accuracy)
-   - Lowest e-value (statistical significance)
-   BIN-Based Optimisation:
-   - For hits from same BOLD BIN with similar identity (±5% or ≥95%), prioritises longer alignments
-   - Reduces redundancy while maintaining assignment quality
-   
-6. OUTPUT GENERATION:
-   CSV Results File:
-   - Validation outcomes (YES/NO matches)
-   - Matched taxonomic ranks and values
-   - Hit quality statistics (identity, length, mismatches, e-value)
-   - Process ID linkages and expected taxonomy information
-   Enhanced obs_taxonomy Field:
-   - Shows taxonomies from top 50 most relevant hits in "Taxonomy (rank)" format
-   - For matches: prioritises hits that match expected lineage
-   - For non-matches: shows top 50 highest-quality hits overall
-   - Provides comprehensive taxonomic context for manual review
-   Filtered FASTA Output:
-   - Contains only sequences with successful taxonomic matches
-   - Maintains original sequence identifiers and formatting
-   - Ready for downstream phylogenetic or ecological analyses
+FILTERING
+==================
+Applied in sequence to BLAST hits:
+1. Minimum percent identity threshold (--min-pident)
+2. Minimum alignment length threshold (--min-length) 
+3. First hit with taxonomic match is selected (no top-N limit)
 
-COMMAND LINE INTERFACE
-=======================
-REQUIRED ARGUMENTS:
-  --input-blast FILE         BLAST results in CSV format with standardized hit columns
-                            Expected columns: seq_id, hit1, hit1_pident, hit1_length,
-                            hit1_mismatch, hit1_evalue, hit1_description, hit2, etc.               
-  --input-bold FILE          BOLD taxonomy database in TSV format
-                            Expected columns: bin, kingdom, phylum, class, order,
-                            family, subfamily, tribe, genus, species, subspecies                 
-  --input-taxonomy FILE      Expected taxonomy mappings in CSV format
-                            Required columns: Process ID, and taxonomic rank columns
-                            (phylum, class, order, family, genus, species)                        
-  --input-fasta FILE         Multi-FASTA file with query sequences
-                            Headers must contain identifiers linkable to Process IDs                          
-  --output-csv FILE          Validation results in CSV format
-                            Contains all validation outcomes and statistics
-  --output-fasta FILE        Filtered FASTA file with only matched sequences
-                            Subset of input sequences with successful taxonomy validation
+SELECTION CRITERIA
+==================
+Best sequence per Process_ID selected based on (in priority order):
+1. Must have match_taxonomy == "YES"
+2. Lowest matched_rank (species > genus > family > order)
+3. Highest pident
+4. Lowest mismatch
+5. Lowest gaps
+6. Lowest evalue
+7. Highest length
+8. Highest s value (from seq_id)
+9. Highest r value (from seq_id)
+10. Has "fcleaner" (from seq_id)
 
-OPTIONAL ARGUMENTS:
-  --taxval-rank RANK         Primary taxonomic rank for validation assessment
-                            Choices: order, family, genus, species (default: family)
-                            Note: Matching occurs at ANY rank in expected lineage;
-                            this parameter primarily affects expected taxonomy extraction                     
-  --min-pident FLOAT         Minimum percent identity threshold for hit inclusion
-                            Range: 0.0-100.0 (default: 0.0, no filtering)
-                            Filters hits before taxonomic matching and analysis                      
-  --log FILE                 Optional log file path for detailed processing information
-                            Default: stdout only, includes debug information and statistics
+COMMAND LINE
+======================
+REQUIRED:
+  --input-blast-csv FILE     # BLAST results CSV with hit columns (hit1, hit1_pident, etc.) output by tv_local_blast.py
+  --input-taxonomy-file FILE # BOLD taxonomy TSV 
+  --input-exp-taxonomy FILE  # Expected taxonomy CSV (Process ID + taxonomic ranks)
+  --input-fasta FILE         # Multi-FASTA sequences with Process ID linkable headers
+  --output-csv FILE          # Validation results CSV
+  --output-fasta FILE        # Filtered FASTA with matching sequences only
 
-VALIDATION EXAMPLES
+OPTIONAL:
+  --taxval-rank RANK         # Primary validation rank: order, family, genus, species (default: family)
+  --min-pident FLOAT         # Minimum percent identity threshold (default: 0.0)
+  --min-length INT           # Minimum alignment length threshold (default: 0)
+  --log FILE                 # Log file path (optional)
+
+VALIDATION STRATEGY
 ===================
-Example 1: Successful Family-Level Match
-  Expected: Cosmopterigidae (family level)
-  BLAST Hit: "Pyroderces sp." → BOLD taxonomy includes Cosmopterigidae family
-  Expected Lineage: Arthropoda → Insecta → Lepidoptera → Cosmopterigidae → Pyroderces
-  BLAST Taxonomy: Lepidoptera → Cosmopterigidae → Pyroderces → "Pyroderces sp."
-  Result: MATCH at FAMILY level
-  Output: match_taxonomy=YES, matched_rank=family, matched_taxonomy=Cosmopterigidae
+- Restricts matching to order, family, genus, species ranks only
+- Uses exact string comparison between BLAST hit taxonomy and expected lineage
+- Accepts matches at ANY rank within expected lineage
+- Selects first hit (by BLAST order) that matches after quality filtering
+- Among matching hits, prioritizes by: percent identity → length → mismatches → e-value
 
-Example 2: Order-Level Match Due to Incomplete Reference
-  Expected: Cosmopterigidae (family level)
-  BLAST Hit: "Lepidoptera environmental sample" → BOLD taxonomy only to order
-  Expected Lineage: Arthropoda → Insecta → Lepidoptera → Cosmopterigidae → Pyroderces  
-  BLAST Taxonomy: Lepidoptera (order only)
-  Result: MATCH at ORDER level
-  Output: match_taxonomy=YES, matched_rank=order, matched_taxonomy=Lepidoptera
-
-Example 3: Hit Prioritization Scenario
-  Hit A: Order match (Lepidoptera), 98.5% identity, 450bp alignment
-  Hit B: Family match (Cosmopterigidae), 95.0% identity, 400bp alignment
-  Hit C: Family match (Cosmopterigidae), 97.2% identity, 420bp alignment
-  Selected: Hit C (family rank supersedes order; highest identity among family matches)
-  
-Example 4: No Match Scenario
-  Expected: Cosmopterigidae (family)
-  Top BLAST Hits: All from Diptera, Coleoptera, etc. (different orders)
-  Result: NO taxonomic matches found at any allowed rank
-  Output: match_taxonomy=NO, matched_rank=null, obs_taxonomy shows top 50 overall hits
-
-DEPENDENCIES
-============
-- Python 3.6+
+OUTPUT
+======
+- CSV: Validation outcomes, matched ranks, hit statistics, obs_taxonomy field, gaps, full lineage, selection status
+- FASTA: Only sequences with successful taxonomic matches
+- obs_taxonomy: Shows top 10 hits with "sseqid: Taxonomy (rank)" format
 
 AUTHORS
 =======
 Dan Parsons @NHMUK
 License: MIT
-Version: 2.3
-
-
-
-
-
-PROCESSING LOGIC:
-================
-
-1. INPUT PARSING:
-   - Parses input FASTA sequences for later output filtering
-   - Parses BLAST results from CSV summary file
-   - Parses expected taxonomy CSV with Process ID mappings
-   - Loads BOLD taxonomy database from TSV file
-
-2. SEQUENCE PROCESSING:
-   For each sequence in BLAST results:
-   a) Find matching Process ID from sequence identifier
-   b) Extract complete expected taxonomic lineage
-   c) Process all BLAST hits to extract observed taxonomies
-   d) Apply minimum percent identity filtering
-   e) Compare observed taxonomies against expected lineage using hierarchical matching
-   f) Select best matching hit using rank-based prioritization and hit quality
-   g) For obs_taxonomy output: show top 50 matching hits if matches exist, otherwise top 50 overall hits
-
-3. HIERARCHICAL TAXONOMIC MATCHING:
-   The script employs a sophisticated matching strategy that:
-   - Searches for matches at ANY taxonomic rank in the expected lineage
-   - Prioritizes more specific matches (species > genus > family > order)
-   - Records the actual rank where matches are found
-   - DOES NOT ALLOW matches at class or phylum level (stops at order)
-   - Uses exact string matching only (no suffix pattern matching)
-
-4. BOLD TAXONOMY EXTRACTION:
-   - Expects single CSV summary file for --input-blast
-   - Extracts BOLD BIN from hit IDs (part after pipe separator)
-   - Looks up BIN in BOLD taxonomy TSV for taxonomic lineage
-   - Compares each taxonomic rank against expected lineage
-
-5. RANK-BASED HIT SELECTION:
-   When multiple hits match at different taxonomic ranks:
-   - Primary criterion: Most specific taxonomic rank (species beats genus beats family, etc.)
-   - Secondary criterion: Highest percent identity among hits at the best rank
-   - Tertiary criterion: Longest alignment length
-   - Quaternary criterion: Fewest mismatches and lowest e-value
-
-6. OUTPUT GENERATION:
-   - CSV results with validation outcomes, matched ranks, and hit statistics
-   - Enhanced obs_taxonomy field showing "Taxonomy (rank)" format from top 50 relevant hits
-   - FASTA file containing only sequences with taxonomic matches at any rank
-
-COMMAND LINE OPTIONS:
-====================
-
-REQUIRED ARGUMENTS:
-  --input-blast FILE         Input BLAST results CSV file
-  --input-bold FILE          Input BOLD taxonomy TSV file
-  --input-taxonomy FILE      Expected taxonomy CSV with Process ID mappings
-  --input-fasta FILE         Input multi-FASTA sequences file
-  --output-csv FILE          Output validation results CSV
-  --output-fasta FILE        Output FASTA with matching sequences only
-
-OPTIONAL ARGUMENTS:
-  --taxval-rank RANK         Taxonomic rank for validation
-                            Choices: order, family, genus, species
-                            Default: family
-                            Note: Used primarily for expected taxonomy extraction; 
-                            actual matching occurs at any rank in the lineage
-  --min-pident FLOAT         Minimum percent identity threshold for hits
-                            Default: 0.0 (no filtering)
-  --log FILE                 Log file path (optional, defaults to stdout)
-
-VALIDATION EXAMPLES:
-============================
-Example Scenario:
-- Expected: Cosmopterigidae (family level)
-- BLAST hits find: "Lepidoptera sp." → extracts "Lepidoptera" 
-- Expected lineage: Arthropoda > Insecta > Lepidoptera > Cosmopterigidae > Pyroderces
-- Result: MATCH at ORDER level (Lepidoptera found in expected lineage)
-- Output: match_taxonomy=YES, matched_rank=order
-
-Prioritisation Example:
-- Hit A: Matches at order level (Lepidoptera), 98% identity
-- Hit B: Matches at family level (Cosmopterigidae), 95% identity  
-- Hit C: Matches at family level (Cosmopterigidae), 97% identity
-- Selected: Hit C (family rank beats order rank, highest identity within family matches)
+Version: 2.7
 """
 
 import argparse
 import csv
 import logging
 import sys
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -252,7 +95,7 @@ def setup_logging(log_file: str = None):
     )
     
     return logging.getLogger(__name__)
-
+    
 def parse_fasta(fasta_file: str, logger) -> Dict[str, str]:
     """Parse FASTA file and return dictionary of seq_id -> sequence."""
     sequences = {}
@@ -306,6 +149,7 @@ def parse_blast_csv(blast_file: str, logger) -> Dict[str, List[Dict]]:
                     mismatch_col = f'hit{i}_mismatch'
                     evalue_col = f'hit{i}_evalue'
                     description_col = f'hit{i}_description'
+                    gaps_col = f'hit{i}_gaps'
                     
                     # Check if this hit column exists and has data
                     if hit_col not in row or not row[hit_col] or row[hit_col].lower() == 'null':
@@ -335,6 +179,7 @@ def parse_blast_csv(blast_file: str, logger) -> Dict[str, List[Dict]]:
                         'mismatch': safe_int(row.get(mismatch_col, '')),
                         'evalue': safe_float(row.get(evalue_col, '')),
                         'description': row.get(description_col, ''),
+                        'gaps': safe_int(row.get(gaps_col, '')),
                         'hit_num': i
                     })
                     
@@ -352,132 +197,214 @@ def parse_blast_csv(blast_file: str, logger) -> Dict[str, List[Dict]]:
     except Exception as e:
         logger.error(f"Error parsing BLAST file: {e}")
         sys.exit(1)
-
-def parse_bold_tsv(bold_file: str, logger) -> Dict[str, Dict]:
-    """Parse BOLD TSV file and return dictionary of BIN -> taxonomy info."""
-    bold_data = {}
+        
+def parse_returned_taxonomy_tsv(bold_file: str, logger) -> Dict[str, Dict]:
+    """
+    Parse taxonomy TSV file and return dictionary of ID -> taxonomy info.
+    Auto-detects format:
+    - BOLDistilled format: separate columns (bin, kingdom, phylum, etc.) (for COI)
+    - Generic format: Feature ID and semicolon-delimited Taxon column (for rbcL)
+    """
+    taxonomy_data = {}
     
     try:
         with open(bold_file, 'r') as f:
             reader = csv.DictReader(f, delimiter='\t')
             
-            for row in reader:
-                bin_id = row['bin']
-                bold_data[bin_id] = {
-                    'kingdom': row.get('kingdom', ''),
-                    'phylum': row.get('phylum', ''),
-                    'class': row.get('class', ''),
-                    'order': row.get('order', ''),
-                    'family': row.get('family', ''),
-                    'subfamily': row.get('subfamily', ''),
-                    'tribe': row.get('tribe', ''),
-                    'genus': row.get('genus', ''),
-                    'species': row.get('species', ''),
-                    'subspecies': row.get('subspecies', '')
-                }
+            # Auto-detect format based on columns
+            fieldnames = [field.lower() for field in reader.fieldnames]
+            
+            # Check if this is BOLDistilled format (has separate taxonomy columns)
+            is_boldistilled = 'bin' in fieldnames and 'kingdom' in fieldnames
+            
+            # Check if this is generic semicolon-delimited format
+            is_generic = 'feature id' in fieldnames and 'taxon' in fieldnames
+            
+            if is_boldistilled:
+                logger.info("Detected BOLDistilled format (separate taxonomy columns)")
+                for row in reader:
+                    bin_id = row['bin']
+                    taxonomy_data[bin_id] = {
+                        'kingdom': row.get('kingdom', ''),
+                        'phylum': row.get('phylum', ''),
+                        'class': row.get('class', ''),
+                        'order': row.get('order', ''),
+                        'family': row.get('family', ''),
+                        'subfamily': row.get('subfamily', ''),
+                        'tribe': row.get('tribe', ''),
+                        'genus': row.get('genus', ''),
+                        'species': row.get('species', ''),
+                        'subspecies': row.get('subspecies', '')
+                    }
+                    
+            elif is_generic:
+                logger.info("Detected generic format (semicolon-delimited taxonomy)")
                 
-        logger.info(f"Parsed taxonomy data for {len(bold_data)} BINs from {bold_file}")
-        return bold_data
-        
-    except FileNotFoundError:
-        logger.error(f"BOLD file not found: {bold_file}")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Error parsing BOLD file: {e}")
-        sys.exit(1)
-
-def parse_taxonomy_csv(taxonomy_file: str, logger) -> Dict[str, Dict]:
-    """
-    Parse taxonomy CSV file and return dictionary of Process ID -> taxonomy info.
-    Accepts 'Process ID' or 'ID' column (case-insensitive).
-    All column names are treated case-insensitively.
-    """
-    taxonomy_data = {}
-    
-    try:
-        with open(taxonomy_file, 'r') as f:
-            reader = csv.DictReader(f)
+                # Get original case column names
+                feature_id_col = None
+                taxon_col = None
+                for field in reader.fieldnames:
+                    if field.lower() == 'feature id':
+                        feature_id_col = field
+                    elif field.lower() == 'taxon':
+                        taxon_col = field
+                
+                for row in reader:
+                    feature_id = row[feature_id_col]
+                    taxon_string = row[taxon_col]
+                    
+                    # Parse semicolon-delimited taxonomy
+                    taxonomy = {
+                        'kingdom': '',
+                        'phylum': '',
+                        'class': '',
+                        'order': '',
+                        'family': '',
+                        'subfamily': '',
+                        'tribe': '',
+                        'genus': '',
+                        'species': '',
+                        'subspecies': ''
+                    }
+                    
+                    for rank_entry in taxon_string.split(';'):
+                        rank_entry = rank_entry.strip()
+                        if '__' in rank_entry:
+                            prefix, value = rank_entry.split('__', 1)
+                            
+                            # Map prefixes to rank names
+                            rank_map = {
+                                'k': 'kingdom',
+                                'p': 'phylum',
+                                'c': 'class',
+                                'o': 'order',
+                                'f': 'family',
+                                'g': 'genus',
+                                's': 'species'
+                            }
+                            
+                            if prefix in rank_map:
+                                taxonomy[rank_map[prefix]] = value
+                    
+                    taxonomy_data[feature_id] = taxonomy
             
-            # Create case-insensitive column mapping
-            original_fieldnames = reader.fieldnames
-            fieldname_map = {name.lower(): name for name in original_fieldnames}
-            
-            # Find the ID column (accept 'process id' or 'id', case-insensitive)
-            id_column = None
-            for potential_id in ['process id', 'id']:
-                if potential_id in fieldname_map:
-                    id_column = fieldname_map[potential_id]
-                    break
-            
-            if not id_column:
-                logger.error(f"No 'Process ID' or 'ID' column found in taxonomy file. Available columns: {', '.join(original_fieldnames)}")
+            else:
+                logger.error("Unable to detect taxonomy file format")
+                logger.error(f"Expected either BOLDistilled format (bin, kingdom, phylum, ...) "
+                           f"or generic format (Feature ID, Taxon)")
+                logger.error(f"Found columns: {', '.join(reader.fieldnames)}")
                 sys.exit(1)
-            
-            logger.info(f"Using '{id_column}' as the ID column")
-            
-            # Get taxonomic rank columns (case-insensitive)
-            rank_columns = {
-                'phylum': fieldname_map.get('phylum'),
-                'class': fieldname_map.get('class'),
-                'order': fieldname_map.get('order'),
-                'family': fieldname_map.get('family'),
-                'genus': fieldname_map.get('genus'),
-                'species': fieldname_map.get('species')
-            }
-            
-            for row in reader:
-                process_id = row[id_column]
-                taxonomy_data[process_id] = {
-                    'phylum': row.get(rank_columns['phylum'], '') if rank_columns['phylum'] else '',
-                    'class': row.get(rank_columns['class'], '') if rank_columns['class'] else '',
-                    'order': row.get(rank_columns['order'], '') if rank_columns['order'] else '',
-                    'family': row.get(rank_columns['family'], '') if rank_columns['family'] else '',
-                    'genus': row.get(rank_columns['genus'], '') if rank_columns['genus'] else '',
-                    'species': row.get(rank_columns['species'], '') if rank_columns['species'] else ''
-                }
                 
-        logger.info(f"Parsed expected taxonomy for {len(taxonomy_data)} Process IDs from {taxonomy_file}")
+        logger.info(f"Parsed taxonomy data for {len(taxonomy_data)} entries from {bold_file}")
         return taxonomy_data
         
     except FileNotFoundError:
-        logger.error(f"Taxonomy file not found: {taxonomy_file}")
+        logger.error(f"Taxonomy file not found: {bold_file}")
         sys.exit(1)
     except Exception as e:
         logger.error(f"Error parsing taxonomy file: {e}")
         sys.exit(1)
 
-def extract_bold_bin(hit_id: str) -> Optional[str]:
-    """Extract BOLD BIN from hit ID (part after the pipe)."""
+def parse_input_taxonomy_csv(taxonomy_data: str, logger) -> Dict[str, Dict]:
+    """Parse taxonomy CSV file and return dictionary of Process ID -> taxonomy info."""
+    exp_taxonomy = {}
+    
+    try:
+        with open(taxonomy_data, 'r') as f:
+            reader = csv.DictReader(f)
+            
+            # Normalize column names to lowercase for case-insensitive matching
+            normalized_fieldnames = {field.lower(): field for field in reader.fieldnames}
+            
+            # Check for Process ID column (accept either 'Process ID' or 'ID')
+            process_id_col = None
+            if 'process id' in normalized_fieldnames:
+                process_id_col = normalized_fieldnames['process id']
+            elif 'id' in normalized_fieldnames:
+                process_id_col = normalized_fieldnames['id']
+            else:
+                logger.error("Taxonomy file must have either 'Process ID' or 'ID' column")
+                sys.exit(1)
+            
+            logger.info(f"Using '{process_id_col}' column as Process ID")
+            
+            for row in reader:
+                process_id = row[process_id_col]
+                
+                # Helper function to get value with case-insensitive key lookup
+                def get_taxonomy_value(rank_name):
+                    rank_lower = rank_name.lower()
+                    if rank_lower in normalized_fieldnames:
+                        return row.get(normalized_fieldnames[rank_lower], '')
+                    return ''
+                
+                exp_taxonomy[process_id] = {
+                    'phylum': get_taxonomy_value('phylum'),
+                    'class': get_taxonomy_value('class'),
+                    'order': get_taxonomy_value('order'),
+                    'family': get_taxonomy_value('family'),
+                    'genus': get_taxonomy_value('genus'),
+                    'species': get_taxonomy_value('species')
+                }
+                
+        logger.info(f"Parsed expected taxonomy for {len(exp_taxonomy)} Process IDs from {taxonomy_data}")
+        return exp_taxonomy
+        
+    except FileNotFoundError:
+        logger.error(f"Taxonomy file not found: {taxonomy_data}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Error parsing taxonomy file: {e}")
+        sys.exit(1)
+
+def build_taxonomy_lineage(exp_taxonomy: Dict[str, str]) -> str:
+    """Build full taxonomic lineage string in format: phylum;class;order;family;genus;species"""
+    ranks = ['phylum', 'class', 'order', 'family', 'genus', 'species']
+    lineage_parts = []
+    
+    for rank in ranks:
+        value = exp_taxonomy.get(rank, '').strip()
+        lineage_parts.append(value)
+    
+    return ';'.join(lineage_parts)
+    
+def extract_hit_id(hit_id: str) -> Optional[str]:
+    """
+    Extract Feature ID from hit ID.
+    Handles both BOLDistilled format (piped: "something|BOLD:AAA0001") 
+    and GenBank format (direct accession: "AB000317.1").
+    """
+    # For BOLDistilled format: extract after the last pipe
     if '|' in hit_id:
         return hit_id.split('|')[-1]
-    return None
+    # For GenBank/generic format: use the ID directly
+    return hit_id
 
-def find_process_id(seq_id: str, taxonomy_data: Dict[str, Dict]) -> Optional[str]:
+def find_process_id(seq_id: str, exp_taxonomy: Dict[str, Dict]) -> Optional[str]:
     """Find matching Process ID by partial match of seq_id."""
     # Try exact match first
-    if seq_id in taxonomy_data:
+    if seq_id in exp_taxonomy:
         return seq_id
     
     # Try partial matches - look for Process IDs that are substrings of seq_id
-    for process_id in taxonomy_data.keys():
+    for process_id in exp_taxonomy.keys():
         if process_id in seq_id:
             return process_id
     
     return None
 
-def get_expected_lineage(expected_taxonomy_data: Dict[str, str]) -> Dict[str, str]:
-    """Extract the complete expected taxonomic lineage (restricted to allowed ranks)."""
-    # Only include allowed ranks (no class or phylum)
+def get_expected_lineage(expected_exp_taxonomy: Dict[str, str]) -> Dict[str, str]:
+    """Extract the complete expected taxonomic lineage (restricted to allowed ranks: order, family, genus, species only)."""
     return {
-        'order': expected_taxonomy_data.get('order', '').strip(),
-        'family': expected_taxonomy_data.get('family', '').strip(),
-        'genus': expected_taxonomy_data.get('genus', '').strip(),
-        'species': expected_taxonomy_data.get('species', '').strip()
+        'order': expected_exp_taxonomy.get('order', '').strip(),
+        'family': expected_exp_taxonomy.get('family', '').strip(),
+        'genus': expected_exp_taxonomy.get('genus', '').strip(),
+        'species': expected_exp_taxonomy.get('species', '').strip()
     }
 
-def find_expected_taxonomy(expected_taxonomy_data: Dict, taxval_rank: str, logger, seq_id: str = None, process_id: str = None) -> Tuple[str, str]:
-    """Find expected taxonomy, traversing up ranks if necessary (restricted to allowed ranks)."""
-    # Define taxonomic hierarchy (from most specific to least specific, no class/phylum)
+def find_expected_taxonomy(expected_exp_taxonomy: Dict, taxval_rank: str, logger, seq_id: str = None, process_id: str = None) -> Tuple[str, str]:
+    """Find expected taxonomy, traversing up ranks if necessary (restricted to order, family, genus, species only)."""
+    # Define taxonomic hierarchy (from most specific to least specific)
     rank_hierarchy = ['species', 'genus', 'family', 'order']
     
     # Find the starting position in the hierarchy
@@ -489,7 +416,7 @@ def find_expected_taxonomy(expected_taxonomy_data: Dict, taxval_rank: str, logge
     
     # Try to find taxonomy at the specified rank and progressively higher ranks
     for current_rank in rank_hierarchy[start_idx:]:
-        expected_rank_value = expected_taxonomy_data.get(current_rank, '').strip()
+        expected_rank_value = expected_exp_taxonomy.get(current_rank, '').strip()
         
         if expected_rank_value:
             if current_rank != taxval_rank:
@@ -500,77 +427,90 @@ def find_expected_taxonomy(expected_taxonomy_data: Dict, taxval_rank: str, logge
     logger.warning(f"No expected taxonomy found at any rank for seq_id: {seq_id}, Process ID: {process_id}")
     return "", ""
 
-def find_taxonomic_match_in_lineages(observed_taxonomy: Dict[str, str], expected_lineage: Dict[str, str], logger) -> Tuple[Optional[str], Optional[str]]:
+def check_hit_matches_lineage(hit_taxonomy: Dict[str, str], expected_lineage: Dict[str, str]) -> Tuple[Optional[str], Optional[str]]:
     """
-    Find taxonomic matches using exact string matching only.
+    Check if a hit's taxonomy matches the expected lineage at any rank.
     Returns (matched_taxonomy, matched_rank) or (None, None)
+    Uses exact string matching only at order, family, genus, species ranks.
     """
-    # Define rank hierarchy (most specific to least specific, no class/phylum)
+    # Define rank hierarchy (most specific to least specific)
     rank_hierarchy = ['species', 'genus', 'family', 'order']
     
     # Check each rank in observed taxonomy against expected lineage
     for rank in rank_hierarchy:
-        observed_at_rank = observed_taxonomy.get(rank, '').strip()
+        observed_at_rank = hit_taxonomy.get(rank, '').strip()
         expected_at_rank = expected_lineage.get(rank, '').strip()
         
         if observed_at_rank and expected_at_rank:
             # Exact string match only
             if observed_at_rank == expected_at_rank:
-                logger.debug(f"Exact match found: '{observed_at_rank}' at rank '{rank}'")
                 return observed_at_rank, rank
     
     return None, None
-
-def get_matching_hits_and_taxonomies(hits: List[Dict], bold_data: Dict[str, Dict], expected_lineage: Dict[str, str], min_pident: float, logger) -> Tuple[List[Tuple[str, str]], List[Dict]]:
-    """Get all observed taxonomies and hits that match any level in the expected lineage."""
-    observed_taxonomies = []  # List of (taxonomy, rank) tuples
-    matching_hits = []
-    filtered_count = 0
     
-    # Define allowed ranks (no class or phylum)
-    allowed_ranks = ['species', 'genus', 'family', 'order']
+def find_first_matching_hit(hits: List[Dict], taxonomy_data: Dict[str, Dict], expected_lineage: Dict[str, str], min_pident: float, min_length: int, logger) -> Optional[Dict]:
+    """
+    Find the first hit (by BLAST order) that matches the expected lineage after quality filtering.
+    Returns the matching hit with taxonomy info added, or None if no matches found.
+    """
+    identity_filtered_count = 0
+    length_filtered_count = 0
     
+    logger.info(f"Searching through {len(hits)} hits for first taxonomic match")
+    
+    # Iterate through hits in BLAST order
     for hit in hits:
-        # Apply minimum percent identity filter
+        # Apply identity filter
         if hit['pident'] < min_pident:
-            filtered_count += 1
+            identity_filtered_count += 1
             continue
-            
-        bold_bin = extract_bold_bin(hit['hit_id'])
-        if not bold_bin:
+        
+        # Apply length filter
+        if hit['length'] < min_length:
+            length_filtered_count += 1
             continue
-            
-        if bold_bin not in bold_data:
-            logger.warning(f"BOLD BIN {bold_bin} not found in BOLD database")
+        
+        # Extract feature/sequence ID
+        feature_id = extract_hit_id(hit['hit_id'])
+        if not feature_id:
+            logger.debug(f"Could not extract feature ID from {hit['hit_id']}")
             continue
+
+        if feature_id not in taxonomy_data:
+            logger.warning(f"Feature ID {feature_id} not found in taxonomy database")
+            continue
+
+        hit_taxonomy = taxonomy_data[feature_id]
+        
+        # Check if this hit matches the expected lineage
+        matched_taxonomy, matched_rank = check_hit_matches_lineage(hit_taxonomy, expected_lineage)
+        
+        if matched_taxonomy:
+            # Found a match! Add taxonomy info and return
+            hit_with_taxonomy = hit.copy()
+            hit_with_taxonomy['taxonomy_match'] = matched_taxonomy
+            hit_with_taxonomy['matched_rank'] = matched_rank
+            hit_with_taxonomy['feature_id'] = feature_id  # previously 'feature_id'
             
-        hit_taxonomy = bold_data[bold_bin]
-        
-        # Extract taxonomic ranks for this hit (only allowed ranks)
-        hit_taxonomies = []
-        
-        for rank in allowed_ranks:
-            hit_rank_value = hit_taxonomy.get(rank, '').strip()
-            if hit_rank_value:
-                hit_taxonomies.append((hit_rank_value, rank))
-                observed_taxonomies.append((hit_rank_value, rank))
-        
-        # Check for exact matches against expected lineage
-        for taxonomy, rank in hit_taxonomies:
-            expected_at_rank = expected_lineage.get(rank, '')
-            if expected_at_rank and taxonomy == expected_at_rank:
-                # Add the taxonomic info to the hit for debugging
-                hit_with_taxonomy = hit.copy()
-                hit_with_taxonomy['taxonomy_match'] = taxonomy
-                hit_with_taxonomy['matched_rank'] = rank
-                hit_with_taxonomy['bold_bin'] = bold_bin
-                matching_hits.append(hit_with_taxonomy)
-                break  # Only record the most specific match for this hit
+            logger.info(f"Found first matching hit: {hit['hit_id']} (hit #{hit['hit_num']})")
+            logger.info(f"  Match: {matched_taxonomy} at {matched_rank} rank")
+            logger.info(f"  Quality: {hit['pident']}% identity, {hit['length']}bp length, {hit['gaps']} gaps")
+            
+            if identity_filtered_count > 0:
+                logger.info(f"  Filtered {identity_filtered_count} hits below {min_pident}% identity before finding match")
+            if length_filtered_count > 0:
+                logger.info(f"  Filtered {length_filtered_count} hits below {min_length}bp length before finding match")
+            
+            return hit_with_taxonomy
     
-    if filtered_count > 0:
-        logger.info(f"Filtered out {filtered_count} hits below {min_pident}% identity threshold")
+    # No matching hits found
+    logger.info(f"No taxonomic matches found after checking all hits")
+    if identity_filtered_count > 0:
+        logger.info(f"  Filtered out {identity_filtered_count} hits below {min_pident}% identity threshold")
+    if length_filtered_count > 0:
+        logger.info(f"  Filtered out {length_filtered_count} hits below {min_length}bp length threshold")
     
-    return observed_taxonomies, matching_hits
+    return None
 
 def sort_hits_by_quality(hits: List[Dict]) -> List[Dict]:
     """Sort hits by quality (percent identity, length, mismatch, e-value)."""
@@ -583,122 +523,157 @@ def sort_hits_by_quality(hits: List[Dict]) -> List[Dict]:
         )
     
     return sorted(hits, key=hit_quality_key, reverse=True)
-
-def get_top_50_taxonomies(hits_to_use: List[Dict], bold_data: Dict[str, Dict], logger) -> str:
-    """Extract taxonomies from top 50 hits and format for obs_taxonomy field."""
-    # Define allowed ranks (no class or phylum)
+    
+def get_top_10_taxonomies(hits: List[Dict], taxonomy_data: Dict[str, Dict], min_pident: float, min_length: int, logger) -> str:
+    """
+    Extract taxonomies from top 10 hits (after quality filtering and sorting) and format for obs_taxonomy field.
+    Format: "sseqid: Taxonomy (rank); sseqid: Taxonomy (rank); ..."
+    """
+    # Define allowed ranks
     allowed_ranks = ['species', 'genus', 'family', 'order']
     
-    obs_taxonomy_formatted = []
-    unique_obs = set()  # To avoid duplicates
-    hits_processed = 0
+    # Apply quality filters
+    filtered_hits = []
+    for hit in hits:
+        if hit['pident'] >= min_pident and hit['length'] >= min_length:
+            filtered_hits.append(hit)
     
-    for hit in hits_to_use:
-        if hits_processed >= 50:
-            break
-            
-        bold_bin = extract_bold_bin(hit['hit_id'])
-        if not bold_bin:
+    # Sort by quality
+    sorted_hits = sort_hits_by_quality(filtered_hits)
+    
+    # Limit to top 10
+    top_hits = sorted_hits[:10]
+    
+    obs_taxonomy_formatted = []
+    
+    for hit in top_hits:
+        feature_id = extract_hit_id(hit['hit_id'])
+        if not feature_id:
             continue
-            
-        if bold_bin not in bold_data:
+    
+        if feature_id not in taxonomy_data:
             continue
-            
-        hit_taxonomy = bold_data[bold_bin]
-        hits_processed += 1
+    
+        hit_taxonomy = taxonomy_data[feature_id]
         
         # Extract taxonomic ranks for this hit (only allowed ranks)
+        # Collect all taxonomies for this hit
+        hit_taxonomies = []
         for rank in allowed_ranks:
             hit_rank_value = hit_taxonomy.get(rank, '').strip()
             if hit_rank_value:
-                formatted_entry = f"{hit_rank_value} ({rank})"
-                if formatted_entry not in unique_obs:
-                    unique_obs.add(formatted_entry)
-                    obs_taxonomy_formatted.append(formatted_entry)
+                hit_taxonomies.append(f"{hit_rank_value} ({rank})")
+        
+        # Format with sseqid prefix
+        if hit_taxonomies:
+            sseqid = hit['hit_id']
+            taxonomy_string = ", ".join(hit_taxonomies)
+            formatted_entry = f"{sseqid}: {taxonomy_string}"
+            obs_taxonomy_formatted.append(formatted_entry)
     
-    return "; ".join(obs_taxonomy_formatted)
+    result = "; ".join(obs_taxonomy_formatted)
+    logger.info(f"Generated obs_taxonomy from {len(top_hits)} hits (after filtering from {len(hits)} total hits)")
+    
+    return result
 
-def find_best_matching_hit(matching_hits: List[Dict]) -> Optional[Dict]:
-    """Find the best matching hit using rank-based prioritization followed by hit quality."""
-    if not matching_hits:
-        return None
+def extract_seq_id_values(seq_id: str) -> Tuple[Optional[float], Optional[int], bool]:
+    """
+    Extract r value, s value, and fcleaner status from seq_id.
+    Returns: (r_value, s_value, has_fcleaner)
+    """
+    # Extract r value (e.g., r_1, r_1.3, r_1.5)
+    r_match = re.search(r'_r_([\d.]+)', seq_id)
+    r_value = float(r_match.group(1)) if r_match else None
     
-    # Define rank hierarchy (most specific to least specific, no class/phylum)
-    rank_priority = {'species': 1, 'genus': 2, 'family': 3, 'order': 4}
+    # Extract s value (e.g., s_50, s_100)
+    s_match = re.search(r'_s_(\d+)', seq_id)
+    s_value = int(s_match.group(1)) if s_match else None
     
-    # Group hits by matched rank
-    hits_by_rank = {}
-    for hit in matching_hits:
-        matched_rank = hit.get('matched_rank', 'unknown')
-        if matched_rank not in hits_by_rank:
-            hits_by_rank[matched_rank] = []
-        hits_by_rank[matched_rank].append(hit)
+    # Check for fcleaner
+    has_fcleaner = 'fcleaner' in seq_id
     
-    # Find the most specific (lowest number) rank with matches
-    best_rank = None
-    best_rank_priority = float('inf')
+    return r_value, s_value, has_fcleaner
     
-    for rank, hits in hits_by_rank.items():
-        if rank in rank_priority:
-            priority = rank_priority[rank]
-            if priority < best_rank_priority:
-                best_rank_priority = priority
-                best_rank = rank
+def select_best_sequences(results: List[Dict], logger) -> List[Dict]:
+    """
+    Select the best sequence for each Process_ID based on quality criteria.
+    Adds 'selected' field to each result: 'YES' for best, 'NO' for others.
     
-    if best_rank is None:
-        # Fallback to first hit if no recognizable ranks
-        return matching_hits[0]
+    Selection criteria (in priority order):
+    1. Must have match_taxonomy == "YES" (i.e. correct taxa at order-level or below)
+    2. Lowest matched_rank (species > genus > family > order)
+    3. Lowest gaps
+    4. Lowest mismatch
+    5. Highest pident
+    6. Lowest evalue
+    7. Highest length
+    8. Highest s value
+    9. Highest r value
+    10. Has "fcleaner" in seq_id
+    """
+    # Group results by Process_ID
+    process_groups = {}
+    for result in results:
+        process_id = result['Process_ID']
+        if process_id not in process_groups:
+            process_groups[process_id] = []
+        process_groups[process_id].append(result)
     
-    # Among hits at the best rank, select by hit quality with BIN optimization
-    best_rank_hits = hits_by_rank[best_rank]
+    logger.info(f"Selecting best sequences for {len(process_groups)} Process IDs")
     
-    # Step 1: Find hit with highest percent identity
-    def initial_selection_key(hit):
-        return (
-            hit['pident'],           # Higher is better
-            hit['length'],           # Higher is better  
-            -hit['mismatch'],        # Lower is better (negative for sorting)
-            -hit['evalue']           # Lower is better (negative for sorting)
-        )
+    # For each Process_ID, select the best sequence
+    for process_id, group_results in process_groups.items():
+        # Filter to only matching sequences
+        matching_results = [r for r in group_results if r['match_taxonomy'] == 'YES']
+        
+        if not matching_results:
+            # No matches for this Process_ID - mark all as not selected
+            logger.info(f"Process ID {process_id}: None of the BLAST hits matched the expected taxonomy at any allowed rank (order, family, genus, or species), or they were filtered out")
+            for result in group_results:
+                result['selected'] = 'NO'
+            continue
+        
+        # Define rank priority (lower number = better/more specific)
+        rank_priority = {'species': 1, 'genus': 2, 'family': 3, 'order': 4, 'null': 999}
+        
+        # Sort matching results by all criteria
+        def selection_key(result):
+            # Extract seq_id values
+            r_value, s_value, has_fcleaner = extract_seq_id_values(result['seq_id'])
+            
+            # Handle missing values
+            r_val = r_value if r_value is not None else -1
+            s_val = s_value if s_value is not None else -1
+            
+            return (
+                rank_priority.get(result['matched_rank'], 999),  # Lower is better (more specific)
+                result['gaps'],                                  # Lower is better
+                result['mismatch'],                              # Lower is better
+                -result['pident'],                               # Negative for higher is better
+                result['evalue'],                                # Lower is better
+                -result['length'],                               # Negative for higher is better
+                -s_val,                                          # Negative for higher is better
+                -r_val,                                          # Negative for higher is better
+                not has_fcleaner                                 # False (has fcleaner) sorts before True
+            )
+        
+        matching_results.sort(key=selection_key)
+        
+        # The first result after sorting is the best
+        best_result = matching_results[0]
+        best_result['selected'] = 'YES'
+        
+        logger.info(f"Process ID {process_id}: Selected {best_result['seq_id']}")
+        logger.info(f"  Criteria: matched_rank={best_result['matched_rank']}, gaps={best_result['gaps']}, "
+                   f"mismatch={best_result['mismatch']}, pident={best_result['pident']}, "
+                   f"evalue={best_result['evalue']}, length={best_result['length']}")
+        
+        # Mark all others as not selected
+        for result in group_results:
+            if result is not best_result:
+                result['selected'] = 'NO'
     
-    initial_best = max(best_rank_hits, key=initial_selection_key)
-    
-    # Step 2: BIN-based optimization
-    # Look for hits with same BIN that have similar % identity but better length
-    if 'bold_bin' not in initial_best:
-        return initial_best
-    
-    same_bin_hits = [hit for hit in best_rank_hits 
-                     if hit.get('bold_bin') == initial_best['bold_bin']]
-    
-    if len(same_bin_hits) <= 1:
-        return initial_best
-    
-    # Define "similar" % identity (within 5% or 95% of the top hit's identity)
-    identity_threshold = max(
-        initial_best['pident'] - 5.0,  # Within 5% absolute
-        initial_best['pident'] * 0.95  # Within 95% relative
-    )
-    
-    # Find hits from same BIN with similar identity
-    similar_identity_hits = [hit for hit in same_bin_hits 
-                           if hit['pident'] >= identity_threshold]
-    
-    if not similar_identity_hits:
-        return initial_best
-    
-    # Among hits with similar identity from same BIN, prioritise by length
-    def bin_optimised_key(hit):
-        return (
-            hit['length'],           # Higher is better (prioritize length for same BIN)
-            hit['pident'],           # Higher is better
-            -hit['mismatch'],        # Lower is better
-            -hit['evalue']           # Lower is better
-        )
-    
-    bin_optimized_best = max(similar_identity_hits, key=bin_optimised_key)
-    
-    return bin_optimized_best
+    return results
 
 def write_output_csv(results: List[Dict], output_file: str, logger):
     """Write results to output CSV file."""
@@ -706,7 +681,7 @@ def write_output_csv(results: List[Dict], output_file: str, logger):
         with open(output_file, 'w', newline='') as f:
             fieldnames = ['seq_id', 'Process_ID', 'taxval_rank', 'expected_taxonomy', 'expected_taxonomy_rank', 
                          'obs_taxonomy', 'match_taxonomy', 'matched_rank', 'top_matching_hit', 
-                         'pident', 'length', 'mismatch', 'evalue']
+                         'pident', 'length', 'mismatch', 'gaps', 'evalue', 'selected']
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             
@@ -731,16 +706,16 @@ def write_output_fasta(matching_sequences: Dict[str, str], output_file: str, log
     except Exception as e:
         logger.error(f"Error writing output FASTA: {e}")
         sys.exit(1)
-
+        
 def main():
     parser = argparse.ArgumentParser(
-        description="Validate taxonomic assignments from BLAST results using BOLD database"
+        description="Validate taxonomic assignments from BLAST results using a custom database"
     )
-    parser.add_argument('--input-blast', required=True, 
+    parser.add_argument('--input-blast-csv', required=True, 
                        help='Input BLAST results CSV file')
-    parser.add_argument('--input-bold', required=True,
-                       help='Input BOLD taxonomy TSV file')
-    parser.add_argument('--input-taxonomy', required=True,
+    parser.add_argument('--input-taxonomy-file', required=True,
+                       help='Input taxonomy TSV file (BOLDistilled format or generic Feature ID/Taxon format)')
+    parser.add_argument('--input-exp-taxonomy', required=True,
                        help='Input expected taxonomy CSV file')
     parser.add_argument('--input-fasta', required=True,
                        help='Input multi-FASTA file with sequences')
@@ -753,6 +728,8 @@ def main():
                        help='Taxonomic rank to validate at (default: family)')
     parser.add_argument('--min-pident', type=float, default=0.0,
                        help='Minimum percent identity threshold for hits to be considered (default: 0.0, no filtering)')
+    parser.add_argument('--min-length', type=int, default=0,
+                       help='Minimum alignment length threshold for hits to be considered (default: 0, no filtering)')
     parser.add_argument('--log', 
                        help='Log file path (optional, defaults to stdout only)')
     
@@ -764,19 +741,22 @@ def main():
     logger.info("Starting BLAST taxonomy validation using BOLD database")
     logger.info(f"Validation rank: {args.taxval_rank}")
     logger.info(f"Minimum percent identity: {args.min_pident}%")
+    logger.info(f"Minimum alignment length: {args.min_length}bp")
     logger.info("Rank restrictions: Only matches at order, family, genus, and species levels allowed")
-    logger.info("obs_taxonomy output: Top 50 matching hits (if matches exist) or top 50 overall hits")
-    logger.info(f"BOLD database: {args.input_bold}")
-    logger.info(f"BLAST input (CSV file): {args.input_blast}")
+    logger.info("Hit selection: First hit with matching taxonomy (by BLAST order) after quality filtering")
+    logger.info("obs_taxonomy output: Top 10 hits by quality with sseqid information")
+    logger.info("Sequence selection: Best sequence per Process_ID based on quality criteria")
+    logger.info(f"Taxonomy database: {args.input_taxonomy_file}")
+    logger.info(f"BLAST input (CSV file): {args.input_blast_csv}")
     
     if args.log:
         logger.info(f"Log file: {args.log}")
     
     # Parse input files
     sequences = parse_fasta(args.input_fasta, logger)
-    blast_data = parse_blast_csv(args.input_blast, logger)
-    bold_data = parse_bold_tsv(args.input_bold, logger)
-    taxonomy_data = parse_taxonomy_csv(args.input_taxonomy, logger)
+    blast_data = parse_blast_csv(args.input_blast_csv, logger)
+    taxonomy_data = parse_returned_taxonomy_tsv(args.input_taxonomy_file, logger)
+    exp_taxonomy = parse_input_taxonomy_csv(args.input_exp_taxonomy, logger)
     
     results = []
     matching_sequences = {}
@@ -786,65 +766,53 @@ def main():
         logger.info(f"Processing sequence: {seq_id} ({len(hits)} hits)")
         
         # Find corresponding Process ID
-        process_id = find_process_id(seq_id, taxonomy_data)
+        process_id = find_process_id(seq_id, exp_taxonomy)
         if not process_id:
             logger.error(f"No matching Process ID found for sequence: {seq_id}")
             sys.exit(1)
         
         # Get complete expected taxonomic lineage (restricted to allowed ranks)
-        expected_lineage = get_expected_lineage(taxonomy_data[process_id])
+        expected_lineage = get_expected_lineage(exp_taxonomy[process_id])
         logger.info(f"Expected lineage (restricted): {expected_lineage}")
+        
+        # Build full taxonomy lineage for output
+        full_lineage = build_taxonomy_lineage(exp_taxonomy[process_id])
         
         # Find expected taxonomy at specified rank (with traversal if needed)
         expected_taxonomy, expected_taxonomy_rank = find_expected_taxonomy(
-            taxonomy_data[process_id], args.taxval_rank, logger, seq_id, process_id)
+            exp_taxonomy[process_id], args.taxval_rank, logger, seq_id, process_id)
         
-        # Get observed taxonomies and matching hits
-        obs_taxonomies, matching_hits = get_matching_hits_and_taxonomies(
-            hits, bold_data, expected_lineage, args.min_pident, logger)
+        # Find first matching hit after quality filtering
+        matching_hit = find_first_matching_hit(
+            hits, taxonomy_data, expected_lineage, args.min_pident, args.min_length, logger)
         
-        # Determine obs_taxonomy string from top 50 relevant hits
-        if matching_hits:
-            # Use top 50 matching hits, sorted by quality (same as overall hits)
-            sorted_matching_hits = sort_hits_by_quality(matching_hits)
-            obs_taxonomy_str = get_top_50_taxonomies(sorted_matching_hits, bold_data, logger)
-            logger.info(f"Using top 50 from {len(matching_hits)} matching hits for obs_taxonomy")
-        else:
-            # Use top 50 overall hits, sorted by quality
-            # Filter hits by min_pident first
-            filtered_hits = [hit for hit in hits if hit['pident'] >= args.min_pident]
-            sorted_overall_hits = sort_hits_by_quality(filtered_hits)
-            obs_taxonomy_str = get_top_50_taxonomies(sorted_overall_hits, bold_data, logger)
-            logger.info(f"No matches found. Using top 50 from {len(filtered_hits)} overall hits for obs_taxonomy")
+        # Generate obs_taxonomy string from top 10 hits by quality
+        obs_taxonomy_str = get_top_10_taxonomies(hits, taxonomy_data, args.min_pident, args.min_length, logger)
         
-        # Log matching hits for debugging
-        if matching_hits:
-            logger.info(f"Found {len(matching_hits)} hits matching expected lineage:")
-            for hit in matching_hits[:5]:  # Show first 5 matching hits
-                matched_rank = hit.get('matched_rank', 'unknown')
-                matched_taxonomy = hit.get('taxonomy_match', 'unknown')
-                logger.info(f"  - {hit['hit_id']}: {matched_taxonomy} at {matched_rank} rank, {hit['pident']}% identity, {hit['length']}bp, BIN: {hit.get('bold_bin', 'unknown')}")
-        
-        # Determine if there's a match and find the best matching hit
-        if matching_hits:
+        # Determine if there's a match
+        if matching_hit:
             match_taxonomy = "YES"
-            best_hit = find_best_matching_hit(matching_hits)
-            matched_rank = best_hit.get('matched_rank', 'unknown')
-            matched_taxonomy = best_hit.get('taxonomy_match', 'unknown')
-            logger.info(f"Selected best matching hit: {best_hit['hit_id']} (taxonomy: {matched_taxonomy} at {matched_rank} rank, pident: {best_hit['pident']}%, length: {best_hit['length']}bp)")
+            matched_rank = matching_hit.get('matched_rank', 'unknown')
+            matched_taxonomy = matching_hit.get('taxonomy_match', 'unknown')
+            best_hit = matching_hit
+            logger.info(f"Match found: {matched_taxonomy} at {matched_rank} rank")
         else:
             match_taxonomy = "NO"
             matched_rank = "null"
-            # For non-matching cases, still show the top overall hit
-            filtered_hits = [hit for hit in hits if hit['pident'] >= args.min_pident]
-            best_hit = filtered_hits[0] if filtered_hits else None
-            if best_hit:
-                logger.info(f"No taxonomic matches found. Showing top overall hit: {best_hit['hit_id']}")
+            # For non-matching cases, show the top overall hit after filtering for reference
+            filtered_hits = [h for h in hits if h['pident'] >= args.min_pident and h['length'] >= args.min_length]
+            if filtered_hits:
+                sorted_filtered = sort_hits_by_quality(filtered_hits)
+                best_hit = sorted_filtered[0]
+                logger.info(f"No taxonomic matches found. Showing top overall hit by quality: {best_hit['hit_id']}")
+            else:
+                best_hit = None
+                logger.info(f"No hits passed quality filters")
         
         # Log the processing results for this sample
         logger.info(f"Sample processing results:")
         logger.info(f"  taxval_rank: {args.taxval_rank}")
-        logger.info(f"  expected_taxonomy: {expected_taxonomy}")
+        logger.info(f"  expected_taxonomy (lineage): {full_lineage}")
         logger.info(f"  expected_taxonomy_rank: {expected_taxonomy_rank}")
         logger.info(f"  obs_taxonomy: {obs_taxonomy_str[:200]}..." if len(obs_taxonomy_str) > 200 else f"  obs_taxonomy: {obs_taxonomy_str}")
         logger.info(f"  match_taxonomy: {match_taxonomy}")
@@ -855,7 +823,7 @@ def main():
             'seq_id': seq_id,
             'Process_ID': process_id,
             'taxval_rank': args.taxval_rank,
-            'expected_taxonomy': expected_taxonomy,
+            'expected_taxonomy': full_lineage,
             'expected_taxonomy_rank': expected_taxonomy_rank,
             'obs_taxonomy': obs_taxonomy_str,
             'match_taxonomy': match_taxonomy,
@@ -864,17 +832,24 @@ def main():
             'pident': best_hit['pident'] if best_hit else '',
             'length': best_hit['length'] if best_hit else '',
             'mismatch': best_hit['mismatch'] if best_hit else '',
+            'gaps': best_hit['gaps'] if best_hit else '',
             'evalue': best_hit['evalue'] if best_hit else ''
         }
         
         # Add to matching sequences for FASTA output if there was a match
-        if match_taxonomy == "YES":
+        results.append(result)
+    
+    # Select best sequences per Process_ID
+    results = select_best_sequences(results, logger)
+    
+    # Collect sequences marked as selected for FASTA output
+    for result in results:
+        if result.get('selected') == 'YES':
+            seq_id = result['seq_id']
             if seq_id in sequences:
                 matching_sequences[seq_id] = sequences[seq_id]
             else:
-                logger.warning(f"Sequence {seq_id} not found in input FASTA")
-        
-        results.append(result)
+                logger.warning(f"Selected sequence {seq_id} not found in input FASTA")
     
     # Write output files
     write_output_csv(results, args.output_csv, logger)
@@ -883,7 +858,9 @@ def main():
     # Summary statistics
     total_sequences = len(results)
     matched_sequences = len(matching_sequences)
+    selected_sequences = sum(1 for r in results if r.get('selected') == 'YES')
     logger.info(f"Summary: {matched_sequences}/{total_sequences} sequences had matches")
+    logger.info(f"Summary: {selected_sequences} sequences selected as best per Process_ID")
     logger.info("BLAST taxonomy validation completed successfully")
 
 if __name__ == "__main__":
