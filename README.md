@@ -101,9 +101,65 @@ git status
 
 ## Customising snakemake configuration file ##
 - Update [config/config.yaml](https://github.com/bge-barcoding/BeeGees/blob/main/config/config.yaml) with the neccessary paths and variables.
-- **Currently, BeeGees barcode validaition only works for COI-5P and rbcL barcodes due to HMM and BLAST database availability (to be expanded with future updates).**
-- Each of the main rules in the config.yaml can specify the number of requested threads and memory resources (in Mb) for every job (e.g. specifying 4 threads and 4G memory for fastp_pe_merge would allocate those resources for every 'fastp_pe_merge' job).
-- If heirarchical taxonomy information was provided in the `samples.csv` file, this file can be reused as the expected_taxonomy CSV file required for taxonomic validation of barcode consensus sequences.
+```
+## General BeeGees pipeline parameters and paths
+run_name: BeeGees run identifier
+mge_path: Path to MGE install (MitoGeneExtractor-vX.X.X file)
+samples_file: Path to samples.csv (see above for formatting)
+sequence_reference_file: Path to sequence_references.csv (leave path blank/empty if 'run_gene_fetch' == true) (see above for formatting)
+output_dir: Path to output directory. If any directories in the path do not already exist, then they wil be created
+
+## Gene Fetch parameters (https://github.com/bge-barcoding/gene_fetch)
+run_gene_fetch: Set to true to use gene-fetch to generate reference sequences (default: true)
+email: Email for NCBI API. Required if run_gene_fetch == true. 
+api_key: NCBI API key. Required if run_gene_fetch == true.
+gene: Target gene (cox1 or rbcl)
+minimum_length: Minimum length (in amino acids) of protein pseudo-reference(s) to fetch (default: 500)
+input_type: Taxonomic identification column(s) (taxid/hierarchical). i.e. Does the 'samples.csv' contain a 'taxid' column or 'hierarchical' taxonomic information columns (default: taxid)? (see above for formatting)
+genbank: Download complete GenBank records of retrieved protein pseudo-references
+
+## Downsampling parameters
+enabled: Set to true to enable downsampling (default: false)
+max_reads: Maximum number of read PAIRS to process (e.g. 25M read pairs = 25M fwd + 25M rev reads, = 50M reads in total). Setting this to zero is equivilent to 'enabled: false'
+
+## MitoGeneExtractor parameters (https://github.com/cmayer/MitoGeneExtractor/tree/main?tab=readme-ov-file#command-line-options)
+r: Exonerate relative score threshold parameter
+s: Exonerate minimum score threshold parameter
+n: Number of base pairs to extend beyond the Exonerate alignment
+C: Genetic code to use for Exonerate (https://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi) 
+t: Consensus threshold (e.g. 0.5 = 50%)
+
+## Post-processing of aligned reads for cleaning and filtering
+# human coi filtering -> at content filtering -> statistical outlier filtering -> (optional) reference-base filtering -> 'cleaned' consensus generation
+consensus_threshold: Threshold at which bases at each positional 'column' must 'agree' to be incldued in the consensus (e.g. 0.5 = ≥50% of bases at each position must agree)
+human_threshold: Threshold at which reads are removed due to similarity with the human COI reference sequence (e.g. 0.95 = reads with ≥95% similarity are removed)
+at_difference: Threshold at which reads are removed due to AT content variation (e.g. 0.1 = reads with AT% differing by 10% from the consensus are removed)
+at_mode: AT content filtering mode (Absolute/Higher/Lower). Absolute = Remove sequences if AT content differs from consensus by more than threshold in either direction. Higher = Only remove sequences with AT content above at_difference threshold. Lower = Only remove sequences with AT content below at_difference threshold
+outlier_percentile: Threshold at which reads are flagged as statistical outliers compared to the consensus and removed (e.g. 90.0 = reads < 90% 'similar' to the consensus are removed)
+reference_dir: Path to directory containing at least one [ID].fasta file with known contaminant or target species genome(s) to be filtered or retained (see reference_filter_mode below)
+reference_filter_mode: Either keep sequences that map to the supplied reference sequence (reference-based retention) or remove sequences that map to the supplied reference sequence (contaminant removal) ("keep_similar"/"remove_similar")
+
+## Structural validation
+run_structural_validation: Set false to skip structural validation step (default: true)
+target: Barcode marker to extract. Corresponds to HMM files in 'resources/hmm' (cox1/coi or rbcl)
+verbose: Enable verbose logging (default: false)
+genetic_code: Genetic code for translation table (must be the same as 'C' MitoGeneExtractor parameter
+
+## Taxonomic validation
+run_taxonomic_validation: Set false to skip structural validation step (default: true). If run_structural_validation == false, run_taxonomic_validation MUST also == false
+database: Path to directory containing BLASTn database, or to a specific FASTA file to make a BLASTn database from (using makeblastdb)
+database_taxonomy: Path to TSV file containing taxonomic mappings corresponding to records in the BLASTn 'database'
+taxval_rank: Taxonomic rank to stop validating at (e.g. family, genus, species) (default & recommended: family)
+expected_taxonomy: Expected taxonomy file must contain the following columns: Process ID,phylum,class,order,family,genus,speces. Process ID must equal 'ID' from the samples_file above. If heirarchical taxonomy information was provided in the `samples.csv` file, this file can be reused as the expected_taxonomy CSV file required for taxonomic validation of barcode consensus sequences.
+verbose: Enable verbose logging (default: true)
+min_pident: Minimum percent identity (pident) threshold to be considered for returned BLAST hits. Any hit with a pident below this value is removed
+min_length: Minimum length of alignment to be considered for returned BLAST hits. Any hit with a length below this value is removed
+
+## Resource allocation for each rule
+rules: Each of the main rules in the config.yaml can specify the number of requested threads and memory resources (in Mb) for every job (e.g. specifying 4 threads and 4G memory for fastp_pe_merge would allocate those resources for every 'fastp_pe_merge' job). Rules have dynamic memory scaling upon retry (mem_mb * retry #).
+```
+**Currently, BeeGees barcode validaition only works for COI-5P and rbcL barcodes due to HMM and BLAST database availability (to be expanded with future updates).**
+
 
 ## Cluster configuration using Snakemake profiles ##
 - See `profiles/` directory for config.yaml files for 'SLURM' or 'local' cluster submission parameters. Other than the default `slurm_partition` and `jobs` parameters, all other parameters can likely stay as they are unless you experience issues.
@@ -259,9 +315,9 @@ output_dir/
 # Validation process
 The BeeGees pipeline contains an optional barcode validation process (see [Workflow](#Workflow) section and [config.yaml](https://github.com/SchistoDan/BeeGees/blob/main/config/config.yaml)) to ensure output barcode quality is maximised through sequential structural and taxonomic validation steos, selecting the best barcode consensus sequences for downstream analyses. 
 - The BeeGees pipeline has the capacity to validate the following barcode markers:
-  - **COI-5P**: Requires the [BOLDistilled](https://boldsystems.org/data/boldistilled/) BLASTn COI database and corresponding taxonomy mapping TSV file (*_SEQUENCES.fasta & *_TAXONOMY.tsv files) downloaded via the ['Download Source Data'](https://us-sea-1.linodeobjects.com/boldistilled/source.zip) button.
-  - **rbcL**: Requires the [custom reference](https://doi.org/10.6084/m9.figshare.17040680.v5) BLASTn rbcL database and corresponding taxonomy mapping TSV file (*\_dereplicated_\*.fasta & *\_dereplicated_\*.tsv), downloaded [here](https://figshare.com/ndownloader/files/56104238).
-
+  - **COI-5P**: Requires the [BOLDistilled](https://boldsystems.org/data/boldistilled/) BLASTn COI database and corresponding taxonomy mapping TSV file (*_SEQUENCES.fasta & *_TAXONOMY.tsv files) downloaded via the ['Download Source Data'](https://us-sea-1.linodeobjects.com/boldistilled/source.zip) button. Utilised the [COI-5p.hmm](https://github.com/SchistoDan/BeeGees/blob/main/resources/hmm/README.md) for structural validation.
+  - **rbcL**: Requires the [custom reference](https://doi.org/10.6084/m9.figshare.17040680.v5) BLASTn rbcL database and corresponding taxonomy mapping TSV file (*\_dereplicated_\*.fasta & *\_dereplicated_\*.tsv), downloaded [here](https://figshare.com/ndownloader/files/56104238). Utilised the [rbcL.hmm](https://github.com/SchistoDan/BeeGees/blob/main/resources/hmm/README.md) for structural validation.
+ 
 ## Structural validation
 Structural validation (via `structural_validation.py`) evaluates all generated barcode consensus sequences (from both pre-processing mode and all fasta_cleaner variants) through structural and functional analysis to identify high-quality, protein-coding sequences suitable for taxonomic assignment and species identification. Outputs  a validation CSV containing comprehensive metrics for all sequences, including structural features, translation analysis, and quality ranks, and 'output_barcode_all_passing.fasta' containing ALL barcode sequences that pass the five quality criteria (multiple barcode sequences per process_id may pass)
 
