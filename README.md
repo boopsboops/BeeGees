@@ -1,5 +1,6 @@
 # Barcode gene Extraction and Evaluation from Genome Skims (BeeGees) Snakemake workflow #
-Snakemake workflow for recovering high-quality barcode sequences, built around MitoGeneExtractor and adapted for genome skims of museum specimens.
+Snakemake workflow for recovering high-quality barcode sequences at scale, built around MitoGeneExtractor and adapted for genome skims of museum specimens.
+
 
 # Contents # 
  - [Requirements](#Requirements)
@@ -11,6 +12,7 @@ Snakemake workflow for recovering high-quality barcode sequences, built around M
  - [Contributing](#Contributing)
  - [Future developments](#Future-developments)
 
+
 # Requirements #
 - [MitoGeneExtractor](https://github.com/cmayer/MitoGeneExtractor) version 1.9.6 installed.
 - Paired-end reads in .fastq.gz or .fastq format.
@@ -18,47 +20,37 @@ Snakemake workflow for recovering high-quality barcode sequences, built around M
 - sequence_references.csv (generated manually, or using [Gene Fetch](https://github.com/bge-barcoding/gene_fetch?tab=readme-ov-file) within the workflow).
 - Activated conda env (see BeeGees_env.yaml).
 
+
 # Workflow #
-1. **Preprocessing mode** (both pre-processing modes are run in parallel):
-   - '**concat**':
-     - Initial raw read quality control - Adapter, trimming, quality trimming, poly-g trimming, and deduplication of paired-end reads using [fastp](https://github.com/OpenGene/fastp) (fastp_pe_concat).
-     - Concantenation of trimmed PE reads (fastq_concat) and associated log files (aggregate_concat_logs).
-     - Compress trimmed reads (gziped_trimmed).
-     - Secondary read quality control - Additional quality trimming of concatenated reads using [trim galore](https://github.com/FelixKrueger/TrimGalore) (quality_trim) and concatenation of associated log files (Aggregate_trim_galore_logs).
-   - '**merge**':
-     - Raw read quality control and merging - Adapter, trimming, quality trimming, poly-g trimming, deduplication, and merging of paired-end reads using [fastp](https://github.com/OpenGene/fastp) (fastp_pe_merge).
-     - 'Clean' headers of input files, as required by MitoGeneExtractor (clean_headers_merge), and concentation of associated log files (Aggregate_clean_headers_logs).
+1. **Preprocessing modes** (both modes run in parallel to optimise barcode recovery from degraded hDNA):
+   - **concat**: Adapter trimming, quality filtering, poly-G trimming, and deduplication of paired-end reads using [fastp](https://github.com/OpenGene/fastp), followed by concatenation of R1+R2 reads and secondary quality trimming with [TrimGalore](https://github.com/FelixKrueger/TrimGalore).
+   - **merge**: Quality control and merging of overlapping paired-end reads using [fastp](https://github.com/OpenGene/fastp), with header cleaning for MitoGeneExtractor compatibility.
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/139b8c7c-b0dc-465c-8c95-e3a58ea1ab96" width="650"/>
 </p>
 
-2. **Sample-specific pseudo-reference retrieval** from GenBank using [Gene-Fetch](https://github.com/bge-barcoding/gene_fetch). (gene_fetch).
-3. **Protein reference-guided barcode recovery** using [MitoGeneExtractor](https://github.com/cmayer/MitoGeneExtractor) (MitoGeneExtractor_concat & MitoGeneExtractor_merge).
-4. **'Raw' consensus sequence header manipulation and concatenation** into multi-FASTA (rename_and_combine_cons_concat & rename_and_combine_cons_merge) (uses supplementary [rename_headers.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/rename_headers.py).
-5. **Remove exonerate intermediates** if remaining after MGE (remove_exonerate_intermediates).
-6. **Generate list of MGE alignment files** for downstream processing (create_alignment_log).
-7. **Filter MGE alignment files to remove low-quality, contaminant, or outlier sequences before repeat consensus sequence generation.**
-   - Remove aligned reads with similarity to human COI (a common contaminant of museum specimens) (uses supplementary [01_human_cox1_filter.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/01_human_cox1_filter.py)).
-   - Remove aligned reads with AT content over and/or below a specified threshold (high AT content can be indicative of contamination (e.g. fungal)) (uses supplementary [02_at_content_filter.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/02_at_content_filter.py)).
-   - Remove reads that are statistical outliers compared to the original consensus (uses supplementary [03_statistical_outliers.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/03_statistical_outlier_filter.py)).
-   - [optional] Remove reads with similarity to supplied reference sequence(s) (uses supplementary [04_reference_filter.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/04_reference_filter.py)).
-   - Generation of 'cleaned' consensus sequence (uses supplementary [05_consensus_generator.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/05_consensus_generator.py)).
-   - Aggregate metrics from each stage of filtering (uses supplementary [06_aggregate_filter_metrics.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/06_aggregate_filter_metrics.py)).
-   - Remove intermediate files and unecessary logs generated during the consensus cleaning process (remove_fasta_cleaner_files).
-  
+2. **Sample-specific reference retrieval**: Automated retrieval of taxonomically-appropriate protein reference sequences from GenBank using [Gene-Fetch](https://github.com/bge-barcoding/gene_fetch).
+3. **Barcode recovery**: Protein reference-guided extraction of barcode sequences from preprocessed reads using [MitoGeneExtractor](https://github.com/cmayer/MitoGeneExtractor), producing initial consensus sequences for both preprocessing modes.
+4. **Consensus sequence preparation**: Header standardisation and concatenation of raw consensus sequences into multi-FASTA format for downstream processing.
+5. **Consensus cleaning and filtering pipeline (fasta_cleaner)**: Sequential quality filters applied to MGE read alignments to remove contaminants and outliers before generating cleaned consensus sequences:
+   - Human COI contamination removal (common in museum specimens) ([01_human_cox1_filter.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/01_human_cox1_filter.py)
+   - AT content filtering (removes suspected fungal/bacterial contamination) ([02_at_content_filter.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/02_at_content_filter.py)
+   - Statistical outlier removal (eliminates reads dissimilar to initial consensus) ([03_statistical_outliers.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/03_statistical_outlier_filter.py)
+   - Optional: Custom reference-based filtering ([04_reference_filter.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/04_reference_filter.py)
+   - Cleaned consensus generation and metrics aggregation ([05_consensus_generator.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/05_consensus_generator.py)
+
 <p align="center">
   <img width="285" height="443" alt="image" src="https://github.com/user-attachments/assets/957d43a7-0c00-40ce-bab8-1827d0e37e1b" />
 </p>
 
-8. **Validate and select barcodes** 
-   - Structural validation - Processes all barcode consensus sequences produced by MGE and fasta_cleaner, combining structural analysis (barcode region HMM-alignment, gaps, ambiguous bases, sequence length) with functional analysis (reading frame determination, stop codon counting, protein translation) to ensure the 'best' consensus sequence is selected for each barcode (uses supplementary [structural_validation.py](https://github.com/bge-barcoding/BeeGees/blob/main/workflow/scripts/structural_validation.py))
-   - Local BLASTn search - of structurally validated barcode sequences (currently uses BOLDistilled for rapid BLASTn searches, and thus is only suitable for COI) (uses supplementary [tv_local_blast.py](https://github.com/bge-barcoding/BeeGees/blob/main/workflow/scripts/tv_local_blast.py)).
-   - Taxonomic validation of BLAST results - through parsing output local BLASTn results, and comparison of top BLAST hit taxonomy (observed taxonomy) with input (expected) taxonomy (uses supplementary [tv_blast2taxonomy.py](https://github.com/bge-barcoding/BeeGees/blob/main/workflow/scripts/tv_blast2taxonomy.py)).
-9. **Compile statistics** from read QC, MGE, and consensus cleaning metrics into a CSV report for both 'concat' and 'merge' modes (uses supplementary [mge_stats.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/mge_stats.py) and combine_stats_files).
-10. **Final mergin of metrics** generated during Fastp, TrimGalore, Gene Fetch, MGE, Fasta_cleaner, structural validation and taxononmic validation steps (uses supplementary [val_csv_merger.py](https://github.com/bge-barcoding/BeeGees/blob/main/workflow/scripts/val_csv_merger.py)).
-11. **Clean up** temporary files, sample-specific logs once aggregated, etc. (cleanup_files).
-
+6. **Barcode validation and selection** (see Validation Process section for more detail):
+   - **Structural validation**: HMM-based barcode extraction, reading frame analysis, stop codon detection, and quality ranking of all generated barcode consensus sequences ([structural_validation.py](https://github.com/bge-barcoding/BeeGees/blob/main/workflow/scripts/structural_validation.py))
+   - **Local BLASTn search**: Parallel BLASTn searches of structurally validated barcodes against local reference database ([tv_local_blast.py](https://github.com/bge-barcoding/BeeGees/blob/main/workflow/scripts/tv_local_blast.py))
+   - **Taxonomic validation**: Hierarchical matching of BLAST results against expected taxonomy, selecting the best sequence per sample based on taxonomic match quality and alignment metrics ([tv_blast2taxonomy.py](https://github.com/bge-barcoding/BeeGees/blob/main/workflow/scripts/tv_blast2taxonomy.py))
+7. **Statistics compilation**: Aggregation of QC, recovery, cleaning, filtering, and validation metrics into comprehensive CSV reports for both preprocessing modes ([mge_stats.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/mge_stats.py)).
+8. **Final integration**: Merging of all pipeline metrics (read QC, MGE, fasta_cleaner, structural validation, taxonomic validation) into a unified output CSV ([val_csv_merger.py](https://github.com/bge-barcoding/BeeGees/blob/main/workflow/scripts/val_csv_merger.py)).
+9. **Cleanup**: Removal of temporary files and redundant sample-specific logs.
 
 
 # Installation and set up: #
@@ -290,7 +282,7 @@ Structural validation (via `structural_validation.py`) evaluates all generated b
 
 
 ## Taxonomic validation
-Taxonomic validation is a two-step process (via `tv_local_blast.py` and `tv_blast2taxonomy.py`) for verifying barcode identity through local BLAST searches and hierarchical taxonomic matching (see [Workflow](#Workflow) section and [config.yaml](https://github.com/SchistoDan/BeeGees/blob/main/config/config.yaml)). 
+Taxonomic validation is a two-step process (via `tv_local_blast.py` and `tv_blast2taxonomy.py`) for verifying barcode identity through local BLAST searches and hierarchical taxonomic matching.
 
 **Process:**
 1. Local BLASTn search: Perform parallel BLASTn searches against a local database, either created from a multi-FASTA file (using makeblastdb), or using a pre-constructed BLAST database. The e-value threshold is hardcoded to 1e-5. In sequence-specific TSV output files (output format 6), the top 500 BLAST hits are then ordered by percent identity (in descending order). These are then filtered to the top 100 hits and are output to the summary CSV.
