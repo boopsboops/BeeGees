@@ -275,18 +275,18 @@ Structural validation (via `structural_validation.py`) evaluates all generated b
 2. Structural analysis: Calculates sequence length, gap distribution (leading/trailing/internal), N base count, and distinguishes 'original' N's (barcode_ambiguous_bases_original, representing quality issues) from processing-introduced N's (barcode_ambiguous_bases, representing all N's in final sequence).
 3. Translation analysis: Evaluates all three reading frames (0, 1 2), translates sequences using specified genetic code, counts stop codons in each frame, and selects the optimal frame with the fewest stop codons.
 4. Quality ranking: Assigns barcode ranks (1-6) based on original N's, stop codons, reading frame validity, and base count (lower = better):
-  - Rank 1: Perfect sequences (no original N's, no stop codons, valid frame, ≥500bp)
-  - Rank 2: High quality (no original N's, no stop codons, valid frame, 400-499bp)
-  - Rank 3: Good quality (no original N's, no stop codons, valid frame, 300-399bp)
-  - Rank 4: Acceptable (no original N's, no stop codons, valid frame, 200-299bp)
-  - Rank 5: Minimal (no original N's, no stop codons, valid frame, 1-199bp)
-  - Rank 6: Problematic (contains original N's or translation issues)
+     - Rank 1: Perfect sequences (no original N's, no stop codons, valid frame, ≥500bp)
+     - Rank 2: High quality (no original N's, no stop codons, valid frame, 400-499bp)
+     - Rank 3: Good quality (no original N's, no stop codons, valid frame, 300-399bp)
+     - Rank 4: Acceptable (no original N's, no stop codons, valid frame, 200-299bp)
+     - Rank 5: Minimal (no original N's, no stop codons, valid frame, 1-199bp)
+     - Rank 6: Problematic (contains original N's or translation issues)
 5. Sequence selection: To be considered structurally validated and proceed to taxonomic validation, sequences mut pass ALL of the following criteria:
-  - No original N's ( barcode_ambiguous_bases_original == 0)
-  - No stop codons (stop_codons == 0)
-  - Sequence is in a valid reading frame (reading_frame >= 0)
-  - Sufficient informative nucleotide base content (barcode_base_count > 300bp)
-  - Acceptable post-processing sequence 'quality' (barcode_ambiguous_bases < 30% of barcode_base_count)
+     - No original N's ( barcode_ambiguous_bases_original == 0)
+     - No stop codons (stop_codons == 0)
+     - Sequence is in a valid reading frame (reading_frame >= 0)
+     - Sufficient informative nucleotide base content (barcode_base_count > 300bp)
+     - Acceptable post-processing sequence 'quality' (barcode_ambiguous_bases < 30% of barcode_base_count)
 
 
 ## Taxonomic validation
