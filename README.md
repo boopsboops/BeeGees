@@ -45,7 +45,8 @@ Snakemake workflow for recovering high-quality barcode sequences at scale, built
    - **Taxonomic validation**: Hierarchical matching of BLAST results against expected taxonomy, selecting the best sequence per sample based on taxonomic match quality and alignment metrics ([tv_blast2taxonomy.py](https://github.com/bge-barcoding/BeeGees/blob/main/workflow/scripts/tv_blast2taxonomy.py))
 7. **Statistics compilation**: Aggregation of QC, recovery, cleaning, filtering, and validation metrics into comprehensive CSV reports for both preprocessing modes ([mge_stats.py](https://github.com/bge-barcoding/MitoGeneExtractor-BGE/blob/main/workflow/scripts/mge_stats.py)).
 8. **Final integration**: Merging of all pipeline metrics (read QC, MGE, fasta_cleaner, structural validation, taxonomic validation) into a unified output CSV ([val_csv_merger.py](https://github.com/bge-barcoding/BeeGees/blob/main/workflow/scripts/val_csv_merger.py)).
-9. **Cleanup**: Removal of temporary files and redundant sample-specific logs.
+9. **Evaluate barcoding outcome**: Take unified CSV file and determine barcoding success (PASS/PARTIAL/FAIL) for each sample ([barcoding_outcome.py](https://github.com/SchistoDan/BeeGees/blob/main/workflow/scripts/barcoding_outcome.py)).
+10. **Cleanup**: Removal of temporary files and redundant sample-specific logs.
 
 
 # Installation and set up: #
@@ -301,6 +302,10 @@ output_dir/
 │       ├── 02_taxonomic_validation.csv                        # Taxonomic validation results
 │       └── {run_name}_barcode_sequences.fasta                 # Final validated barcode sequences
 │
+├── **05_barcoding_outcome/**
+│   ├── baroding_outcome.log                                   # Summary and logging of barcoding outcome analysis
+│   └── barcoding-outcome.tsv                                  # Overview of barcoding outcomes
+|
 ├── {run_name}_final_validated_barcodes.fasta                  # Only if both validations run
 ├── {run_name}_final_stats.csv                                 # Only if both validations run
 └── logs/                                                      # Top-level logs directory
@@ -365,7 +370,6 @@ The barcode validation outputs are merged with pre-processing and barcode recove
 - Taxonomic validation results
 
 
-
 # Contributing #
 - Please feel free to submit issues, fork the repository, and create pull requests for any improvements.
 - This snakemake pipeline was produced by Dan Parsons @ NHMUK for the Biodiversity Genomics Europe (BGE) consortium. If you use BeeGees in your work, please cite our paper at ...
@@ -377,9 +381,5 @@ The barcode validation outputs are merged with pre-processing and barcode recove
 - Expand supported markers beyond COI-5P and rbcL. Will require marker-specific HMMs, BLAST databases and associated taxonomy files for barcode validation. Next likely maker to be added = Matk.
 - Increase flexibility of input sequence_references CSV headers, so that ID/id/Process ID/PROCESS ID/process_id/sample/sample_id/SAMPLE ID/etc are accepted.
 - Update 01_human_cox1_filter.py so it does not solely filter aligned reads against human COI, but instead against the whole human mitogenome.
-- Integrate pre-MGE contamination screening step (e.g. using BBDuk)
-- Make downsampling a separate step that happens after fastp trimming for both merge_mode and concat_mode.
-- Output a multi-fasta file of sequences which passed structural validation but failed taxonomy for each Process-ID.
-- Output simple plots.
-- Clean up and refactor final CSV output, and remove unnecessary columns.
-  
+- Integrate pre-MGE contamination screening step (e.g. using BBDuk).
+- Output simple plots. 
