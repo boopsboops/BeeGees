@@ -299,9 +299,9 @@ if run_gene_fetch:
 def get_hmm_file_for_target(target):
     """Map target gene to corresponding HMM file path"""
     hmm_mapping = {
-        "cox1": "resources/hmm/COI-5P.hmm",
-        "coi": "resources/hmm/COI-5P.hmm",
-        "rbcl": "resources/hmm/rbcL.hmm"
+        "cox1": os.path.join(workflow.basedir, "resources/hmm/COI-5P.hmm"),
+        "coi": os.path.join(workflow.basedir, "resources/hmm/COI-5P.hmm"),
+        "rbcl": os.path.join(workflow.basedir, "resources/hmm/rbcL.hmm")
     }
     
     target_lower = target.lower()
