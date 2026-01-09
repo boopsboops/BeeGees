@@ -1,6 +1,7 @@
 # Barcode gene Extraction and Evaluation from Genome Skims (BeeGees) Snakemake workflow #
 Snakemake workflow for recovering high-quality barcode sequences at scale, built around MitoGeneExtractor and adapted for genome skims of museum specimens.
 
+[![Snakemake](https://img.shields.io/badge/snakemake-9.9.0-brightgreen.svg?style=flat)](https://snakemake.readthedocs.io)
 
 # Contents # 
  - [Requirements](#Requirements)
