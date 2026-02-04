@@ -59,8 +59,8 @@ run_taxonomic_validation: true                   # If run_structural_validation 
 taxonomic_validation:
     database: "/BLAST_database/"                 # Path to directory containing BLASTn database files or fasta
     taxval_rank: "family"                        # Taxonomic rank for validation (phylum, class, order, family, genus, species) (default & recommended: family)
-    database_taxonomy: "/*_taxonomy.tsv"         # Path to TSV file containing taxnonmic mapping associated with records in provided BLASTn database
-    expected_taxonomy: "samples.csv"             # Path to CSV file containing hierarchical taxonomic lineage information for each sample
+    expected_taxonomy: "samples.csv"             # Path to CSV file containing hierarchical taxonomic lineage information for each sample.
+                                                 # It must contain the following columns: ID,phylum,class,order,family,genus,speces. ID must equal 'ID' from samples_file above
     verbose: true                                # Enable verbose logging
     min_pident: 80                               # Minimum percent identity (pident) threshold to be considered
     min_length: 100                              # Minimum length of BLASTn alignment to be considered
