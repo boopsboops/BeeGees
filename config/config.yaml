@@ -70,7 +70,8 @@ taxonomic_validation:
 rules:
   gene_fetch:                                    # Gene Fetch
     mem_mb: 8192
-    threads: 4  
+    threads: 4
+    partition: long  
   fastp_qc:                                      # Fastp (merge and concat modes)
     mem_mb: 16384
     threads: 4
@@ -112,11 +113,11 @@ rules:
     threads: 4
   structural_validation:                         # structural_validation.py
     mem_mb: 16384
-    threads: 8
+    threads: 16
     partition: PARTITION
   taxonomic_validation:                          # tv_local blast.py
     mem_mb: 51200
-    threads: 8                                  # Minimum = 4 (4 threads given to each parallised BLASTn run)
+    threads: 32                                  # Minimum = 4 (4 threads given to each parallised BLASTn run)
     partition: PARTITION
   blast2taxonomy:                                # tv_blast2taxonomy.py
     mem_mb: 16384
