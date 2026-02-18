@@ -762,7 +762,8 @@ class BLASTRunner:
         
         # Write CSV file
         try:
-            csv_path = self.output_dir / self.output_csv
+            csv_path = Path(self.output_csv)
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
             with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow(headers)

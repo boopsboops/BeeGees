@@ -1,17 +1,17 @@
 # config/config.yaml
 
 ## General BeeGees pipeline parameters and paths
-run_name: "BeeGees_RUN_1"                        # BeeGees run name identifier
-mge_path: "path/to/MitoGeneExtractor"            # Path to MGE installation (MitoGeneExtractor-vX.X.X file)
-samples_file: "path/to/samples.csv"              # Path to samples.csv
+run_name: "results_yyyy-mm-dd"                   # BeeGees run name identifier
+mge_path: "/full/path/to/MitoGeneExtractor-v1.9.6"             # Path to MGE installation (MitoGeneExtractor-vX.X.X file)
+samples_file: "config/samples.csv"               # Path to samples.csv
 sequence_reference_file: ""                      # Path to sequence_references.csv (leave path blank/empty if 'run_gene_fetch' == true)
-output_dir: "path/to/BeeGees-RUN_1-out"          # Path to main output directory
+output_dir: "results_yyyy-mm-dd"                 # Path to main output directory
 
 ## Gene Fetch parameters (https://github.com/bge-barcoding/gene_fetch), or using `gene-fetch --help`.
 run_gene_fetch: true
 gene_fetch:
-   email: "example@example.ac.uk"                # Email for NCBI API
-   api_key: "12345678910"                        # NCBI API key
+   email: "dont-put-this-on-github"              # Email for NCBI API
+   api_key: "dont-put-this-on-github"            # NCBI API key
    gene: "cox1"                                  # Target gene (e.g., cox1/coi or rbcl)
    minimum_length: "500"                         # Minimum length of protein reference(s) to fetch (default: 500aa)
    input_type: "taxid"                           # Type of expected taxonomy provided. 'taxid' OR 'hierarchical' taxonomic lineage
@@ -33,7 +33,7 @@ s:
   - 50
   - 100
 n: 0                                             # Number of bp to extend beyond the Exonerate alignment
-C: 5                                             # Genetic code
+C: 2                                             # Genetic code
 t: 0.5                                           # Consensus threshold
 
 ## Post-processing of aligned reads for cleaning (using six supplementary scripts)
@@ -52,14 +52,15 @@ run_structural_validation: true                  # Set false to skip structural 
 structural_validation:
   target: "cox1"                                 # Options: cox1/coi or rbcl (maps to corresponding HMM)
   verbose: false                                 # Enable verbose logging
-  genetic_code: 5                                # Genetic code table for translation
+  genetic_code: 2                                # Genetic code table for translation
 
 ## Taxonomic validation
 run_taxonomic_validation: true                   # If run_structural_validation == false, run_taxonomic_validation MUST also be false
 taxonomic_validation:
-    database: "/BLAST_database/"                 # Path to directory containing BLASTn database files or fasta
+    database: "BLAST_database/"                  # Path to directory containing BLASTn database files or fasta
+    database_taxonomy: "BLAST_database/BOLDistilled_COI_Jan2026_TAXONOMY.tsv"   # Path to taxonomy file
     taxval_rank: "family"                        # Taxonomic rank for validation (phylum, class, order, family, genus, species) (default & recommended: family)
-    expected_taxonomy: "samples.csv"             # Path to CSV file containing hierarchical taxonomic lineage information for each sample.
+    expected_taxonomy: "config/samples.csv"      # Path to CSV file containing hierarchical taxonomic lineage information for each sample.
                                                  # It must contain the following columns: ID,phylum,class,order,family,genus,speces. ID must equal 'ID' from samples_file above
     verbose: true                                # Enable verbose logging
     min_pident: 80                               # Minimum percent identity (pident) threshold to be considered
@@ -69,8 +70,7 @@ taxonomic_validation:
 rules:
   gene_fetch:                                    # Gene Fetch
     mem_mb: 8192
-    threads: 4
-    parrition: long
+    threads: 4  
   fastp_qc:                                      # Fastp (merge and concat modes)
     mem_mb: 16384
     threads: 4
@@ -112,11 +112,11 @@ rules:
     threads: 4
   structural_validation:                         # structural_validation.py
     mem_mb: 16384
-    threads: 16
+    threads: 8
     partition: PARTITION
   taxonomic_validation:                          # tv_local blast.py
     mem_mb: 51200
-    threads: 32                                  # Minimum = 4 (4 threads given to each parallised BLASTn run)
+    threads: 8                                  # Minimum = 4 (4 threads given to each parallised BLASTn run)
     partition: PARTITION
   blast2taxonomy:                                # tv_blast2taxonomy.py
     mem_mb: 16384

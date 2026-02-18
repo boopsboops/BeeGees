@@ -1082,11 +1082,13 @@ def write_filtered_paths_log(output_dir: str, processed_files: List[str], filena
     filtered_seqs_dir = os.path.join(output_dir, 'at_filtered_sequences')
     
     # Handle absolute vs relative paths correctly
-    if os.path.isabs(filename):
+    if os.path.dirname(filename):
         paths_log = filename
     else:
         paths_log = os.path.join(output_dir, filename)
     
+    os.makedirs(os.path.dirname(paths_log), exist_ok=True)
+
     successful_paths = []
     
     # Check which files were successfully processed and have output

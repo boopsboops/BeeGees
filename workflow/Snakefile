@@ -450,7 +450,7 @@ if run_gene_fetch:
         threads: rule_resources["gene_fetch"]["threads"]
         resources:
             mem_mb=lambda wildcards, attempt: rule_resources["gene_fetch"]["mem_mb"] * attempt,
-            slurm_partition=rule_resources["gene_fetch"]["partition"]
+            slurm_partition = rule_resources.get("gene_fetch", {}).get("partition", "none")
         retries: 3
         shell:
             """
@@ -2204,7 +2204,7 @@ if run_taxonomic_validation:
             set -euo pipefail
             
             # Create output directory
-            mkdir -p {params.out_dir}
+            mkdir -p $(dirname {output.csv})
             
             # Check if database exists
             if [ ! -e "{params.database}" ]; then

@@ -1,6 +1,6 @@
 #!/bin/bash
 ## Conda environment
-conda activate bgee_env
+# conda activate bgee_env
 
 # Setup logging
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -8,7 +8,7 @@ VERSION="v2.0.0"
 RUN_ID="BGEE Snakemake workflow"				
 LOG_FILE="snakemake_${TIMESTAMP}.log"
 CONFIG="./config/config.yaml"
-PROFILE="./profiles/slurm/"
+PROFILE="./profiles/local/"
 
 # Function for timestamped logging
 log_with_timestamp() {
